@@ -49,13 +49,14 @@ def get_arn_script(conn, file_key):
             return {"status": "success", "script": script}
         else:
             update_load_status(conn, file_key, "VALIDATED - WITHOUT SCRIPT")
-            return {"status": "success", "script": None}
+            return {"status": "success"}
 
 
 # --- HANDLER PRINCIPAL (Único lugar con Try/Except complejo) ---
 
 def lambda_handler(event, context):
-    file_key = event['Records'][0]['s3']['object']['key']
+    # Accedemos directo al bloque 'detail'
+    file_key = event['detail']['object']['key']
     conn = None
 
     try:
