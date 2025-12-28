@@ -32,6 +32,8 @@ def read_current_status(conn, file_key) -> bool:
         query = "SELECT status FROM cargas WHERE nombre_archivo = %s"
         cur.execute(query, (file_key,))
         registro = cur.fetchone()
+        print(f"registro {registro}")
+        print(registro)
         return registro and registro['status'] == 'RAW'
 
 
@@ -57,6 +59,7 @@ def get_arn_script(conn, file_key):
 def lambda_handler(event, context):
     # Accedemos directo al bloque 'detail'
     file_key = event['detail']['object']['key']
+    print(f"file_key {file_key}")
     conn = None
 
     try:
