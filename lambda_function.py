@@ -1,101 +1,86 @@
 import os
 import logging
 import psycopg2
-import awswrangler as wr
-import pandas as pd
+from psycopg2.extras import RealDictCursor
 
-# Configuración de Logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-# --- SUBFUNCIONES DE APOYO ---
-
 def get_db_connection():
-    """Gestiona la conexión a RDS usando variables de entorno."""
     return psycopg2.connect(
         host=os.environ['DB_HOST'],
         database=os.environ['DB_NAME'],
         user=os.environ['DB_USER'],
         password=os.environ['DB_PASS'],
-        connect_timeout=5
+        connect_timeout=5,
+        cursor_factory=RealDictCursor
     )
 
 
 def update_load_status(conn, file_key, status):
-    """Actualiza el estado en la tabla 'cargas' en RDS."""
-    try:
-        with conn.cursor() as cur:
-            # Asumimos que la tabla se llama 'cargas' y filtramos por el nombre del objeto
-            query = "UPDATE cargas SET estado = %s WHERE nombre_objeto = %s"
-            cur.execute(query, (status, file_key))
-            conn.commit()
-            logger.info(f"Estado de {file_key} actualizado a {status}")
-    except Exception as e:
-        logger.error(f"Error actualizando estado en RDS: {e}")
-        conn.rollback()
+    """Actualiza el estado. No capturamos error aquí para que explote en el main si falla."""
+    with conn.cursor() as cur:
+        query = "UPDATE cargas SET status = %s WHERE nombre_archivo = %s"
+        cur.execute(query, (status, file_key))
+        conn.commit()
+        logger.info(f"Estado de {file_key} actualizado a {status}")
 
 
-def read_s3_file(bucket, key):
-    """Detecta la extensión y lee el archivo usando awswrangler."""
-    path = f"s3://{bucket}/{key}"
-    if key.lower().endswith('.xlsx'):
-        logger.info(f"Leyendo Excel: {path}")
-        return wr.s3.read_excel(path)
-    elif key.lower().endswith('.csv'):
-        logger.info(f"Leyendo CSV: {path}")
-        return wr.s3.read_csv(path)
-    else:
-        raise ValueError(f"Formato no soportado para el archivo: {key}")
+def read_current_status(conn, file_key) -> bool:
+    with conn.cursor() as cur:
+        query = "SELECT status FROM cargas WHERE nombre_archivo = %s"
+        cur.execute(query, (file_key,))
+        registro = cur.fetchone()
+        return registro and registro['status'] == 'RAW'
 
 
-def validate_structure(df):
-    """Lógica de validación con Pandas (aquí pones tus reglas)."""
-    # Ejemplo simple: verificar que no esté vacío
-    if df.empty:
-        return False, "El archivo está vacío"
-    # Podés agregar: if 'cuit' not in df.columns...
-    return True, "OK"
+def get_arn_script(conn, file_key):
+    """Retorna el ARN o None. Si falla, el error sube al handler."""
+    with conn.cursor() as cur:
+        query = "SELECT obtener_script_carga(%s) as script_name"
+        cur.execute(query, (file_key,))
+        result = cur.fetchone()
+
+        script = result['script_name'] if result else None
+
+        if script:
+            update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT")
+            return {"status": "success", "script": script}
+        else:
+            update_load_status(conn, file_key, "VALIDATED - WITHOUT SCRIPT")
+            return {"status": "success", "script": None}
 
 
-# --- HANDLER PRINCIPAL ---
+# --- HANDLER PRINCIPAL (Único lugar con Try/Except complejo) ---
 
 def lambda_handler(event, context):
-    # 1. Extraer datos del evento S3
-    bucket = event['Records'][0]['s3']['bucket']['name']
     file_key = event['Records'][0]['s3']['object']['key']
-
-    logger.info(f"Procesando archivo: {file_key} del bucket: {bucket}")
-
     conn = None
+
     try:
-        # 2. Conectar a RDS
         conn = get_db_connection()
 
-        # 3. Cambiar estado a 'VERIFICANDO' (Opcional pero recomendado)
-        update_load_status(conn, file_key, 'VERIFICANDO')
-
-        # 4. Leer archivo de S3
-        df = read_s3_file(bucket, file_key)
-
-        # 5. Validar estructura
-        is_valid, message = validate_structure(df)
-
-        # 6. Finalizar según validación
-        if is_valid:
-            update_load_status(conn, file_key, 'VALIDATED')
-            return {"status": "success", "message": "Archivo validado correctamente"}
-        else:
+        # 1. Validar estado previo
+        if not read_current_status(conn, file_key):
             update_load_status(conn, file_key, 'REJECTED')
-            return {"status": "rejected", "reason": message}
+            return {"status": "rejected", "reason": "El estado previo no es RAW o no existe el registro"}
+
+        # 2. Transición y búsqueda de script
+        update_load_status(conn, file_key, 'VERIFICANDO SI POSEE ALGORITMO')
+        return get_arn_script(conn, file_key)
 
     except Exception as e:
-        logger.error(f"Fallo crítico en el proceso: {str(e)}")
+        error_msg = f"Fallo crítico: {str(e)}"
+        logger.error(error_msg)
         if conn:
-            update_load_status(conn, file_key, 'FAILED')
-        return {"status": "error", "message": str(e)}
-
+            try:
+                # Intentamos marcar el error en la DB
+                update_load_status(conn, file_key, 'FAILED')
+            except Exception:  # <-- Cambiado de bare except a Exception
+                # Si llegamos aquí es porque la conexión a la DB se rompió físicamente
+                logger.warning("No se pudo actualizar el estado a FAILED porque la DB no responde.")
+        return {"status": "error", "message": error_msg}
     finally:
         if conn:
             conn.close()
-            logger.info("Conexión a RDS cerrada.")
