@@ -26,4 +26,4 @@ jobs:
       - name: Deploy to Lambda
         run: |
           zip -r function.zip lambda_function.py
-          aws lambda update-function-code --function-name fd-val-mod1 --zip-file fileb://function.zip
+          aws lambda update-function-code --function-name fd-posee-alg --zip-file fileb://function.zip
