@@ -33,12 +33,10 @@ def read_current_status(conn, file_key) -> bool:
         cur.execute(query, (file_key,))
         registro = cur.fetchone()
         print(f"registro {registro}")
-        print(registro)
         return registro and registro['status'] == 'RAW'
 
 
 def get_arn_script(conn, file_key):
-    """Retorna el ARN o None. Si falla, el error sube al handler."""
     with conn.cursor() as cur:
         query = "SELECT obtener_script_carga(%s) as script_name"
         cur.execute(query, (file_key,))
@@ -46,33 +44,42 @@ def get_arn_script(conn, file_key):
 
         script = result['script_name'] if result else None
 
+        # Agregamos 'file_key': file_key al retorno para el siguiente paso
         if script:
             update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT")
-            return {"status": "success", "script": script}
+            return {
+                "status": "success",
+                "script": script,
+                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
+            }
         else:
             update_load_status(conn, file_key, "VALIDATED - WITHOUT SCRIPT")
-            return {"status": "success"}
+            return {
+                "status": "success",
+                "file_key": file_key  # <--- IMPORTANTE
+            }
 
 
 # --- HANDLER PRINCIPAL (Único lugar con Try/Except complejo) ---
 
 def lambda_handler(event, context):
     # Accedemos directo al bloque 'detail'
-    file_key = event['detail']['object']['key']
-    print(f"file_key {file_key}")
+    full_path = event['detail']['object']['key']
+    file_key_db = full_path.replace('raw/', '', 1)
+    print(f"file_key {file_key_db}")
     conn = None
 
     try:
         conn = get_db_connection()
 
         # 1. Validar estado previo
-        if not read_current_status(conn, file_key):
-            update_load_status(conn, file_key, 'REJECTED')
+        if not read_current_status(conn, file_key_db):
+            update_load_status(conn, file_key_db, 'REJECTED')
             return {"status": "rejected", "reason": "El estado previo no es RAW o no existe el registro"}
 
         # 2. Transición y búsqueda de script
-        update_load_status(conn, file_key, 'VERIFICANDO SI POSEE ALGORITMO')
-        return get_arn_script(conn, file_key)
+        update_load_status(conn, file_key_db, 'VERIFICANDO SI POSEE ALGORITMO')
+        return get_arn_script(conn, file_key_db)
 
     except Exception as e:
         error_msg = f"Fallo crítico: {str(e)}"
@@ -80,7 +87,7 @@ def lambda_handler(event, context):
         if conn:
             try:
                 # Intentamos marcar el error en la DB
-                update_load_status(conn, file_key, 'FAILED')
+                update_load_status(conn, file_key_db, 'FAILED')
             except Exception:  # <-- Cambiado de bare except a Exception
                 # Si llegamos aquí es porque la conexión a la DB se rompió físicamente
                 logger.warning("No se pudo actualizar el estado a FAILED porque la DB no responde.")
