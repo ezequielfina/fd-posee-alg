@@ -1,0 +1,29 @@
+name: build
+
+on:
+  merge_group:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  id-token: write   # Obligatorio para OIDC
+  contents: read    # Obligatorio para leer el código
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1 # Tu región
+
+      - name: Deploy to Lambda
+        run: |
+          zip -r function.zip lambda_function.py
+          aws lambda update-function-code --function-name fd-val-mod1 --zip-file fileb://function.zip
