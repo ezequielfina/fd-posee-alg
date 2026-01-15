@@ -56,7 +56,7 @@ def get_arn_script(conn, file_key):
             update_load_status(conn, file_key, "VALIDATED - WITHOUT SCRIPT")
             return {
                 "status": "success",
-                "file_key": file_key  # <--- IMPORTANTE
+                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
             }
 
 
