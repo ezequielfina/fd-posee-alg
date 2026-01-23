@@ -38,34 +38,47 @@ def read_current_status(conn, file_key) -> bool:
 
 def get_arn_script(conn, file_key):
     with conn.cursor() as cur:
-        query = "SELECT obtener_script_carga(%s) as script_name"
+        # 1. Usamos SELECT * para que traiga columnas separadas: v_script y t_script
+        query = "SELECT * FROM obtener_script_carga(%s)"
         cur.execute(query, (file_key,))
+
+        # fetchone() nos dará una tupla (o dict si configuraste RealDictCursor)
         result = cur.fetchone()
 
-        script_val, script_tra = result['script_name'] if result else None
+    # Si no hay resultado en la DB
+    if not result:
+        update_load_status(conn, file_key, "VALIDATED - WITHOUT ANY SCRIPT")
+        return {
+            "status": "success",
+            "file_key": f"raw/{file_key}"
+        }
 
-        # Agregamos 'file_key': file_key al retorno para el siguiente paso
-        if script_val and script_tra:
-            update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT")
-            return {
-                "status": "success",
-                "script_val": script_val,
-                "script_tra": script_tra,
-                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
-            }
-        elif script_val:
-            update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT VAL NOT TRA")
-            return {
-                "status": "success",
-                "script_val": script_val,
-                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
-            }
-        else:
-            update_load_status(conn, file_key, "VALIDATED - WITHOUT ANY SCRIPT")
-            return {
-                "status": "success",
-                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
-            }
+    # Asumiendo que usas un cursor normal (tupla)
+    # Si usas DictCursor, sería script_val = result['v_script'], etc.
+    script_val, script_tra = result
+
+    # Tu lógica de negocio
+    if script_val and script_tra:
+        update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT")
+        return {
+            "status": "success",
+            "script_val": script_val,
+            "script_tra": script_tra,
+            "file_key": f"raw/{file_key}"
+        }
+    elif script_val:
+        update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT VAL NOT TRA")
+        return {
+            "status": "success",
+            "script_val": script_val,
+            "file_key": f"raw/{file_key}"
+        }
+    else:
+        update_load_status(conn, file_key, "VALIDATED - WITHOUT ANY SCRIPT")
+        return {
+            "status": "success",
+            "file_key": f"raw/{file_key}"
+        }
 
 
 # --- HANDLER PRINCIPAL (Único lugar con Try/Except complejo) ---
