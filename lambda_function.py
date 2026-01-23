@@ -42,18 +42,26 @@ def get_arn_script(conn, file_key):
         cur.execute(query, (file_key,))
         result = cur.fetchone()
 
-        script = result['script_name'] if result else None
+        script_val, script_tra = result['script_name'] if result else None
 
         # Agregamos 'file_key': file_key al retorno para el siguiente paso
-        if script:
+        if script_val and script_tra:
             update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT")
             return {
                 "status": "success",
-                "script": script,
+                "script_val": script_val,
+                "script_tra": script_tra,
+                "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
+            }
+        elif script_val:
+            update_load_status(conn, file_key, "VALIDATED - WITH SCRIPT VAL NOT TRA")
+            return {
+                "status": "success",
+                "script_val": script_val,
                 "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
             }
         else:
-            update_load_status(conn, file_key, "VALIDATED - WITHOUT SCRIPT")
+            update_load_status(conn, file_key, "VALIDATED - WITHOUT ANY SCRIPT")
             return {
                 "status": "success",
                 "file_key": f"raw/{file_key}"  # <--- IMPORTANTE
