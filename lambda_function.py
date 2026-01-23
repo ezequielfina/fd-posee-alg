@@ -53,9 +53,7 @@ def get_arn_script(conn, file_key):
             "file_key": f"raw/{file_key}"
         }
 
-    # Asumiendo que usas un cursor normal (tupla)
-    # Si usas DictCursor, sería script_val = result['v_script'], etc.
-    script_val, script_tra = result
+    script_val, script_tra = result['v_script'], result['t_script']
 
     # Tu lógica de negocio
     if script_val and script_tra:
