@@ -94,7 +94,11 @@ def lambda_handler(event, context):
         # 1. Validar estado previo
         if not read_current_status(conn, file_key_db):
             update_load_status(conn, file_key_db, 'REJECTED')
-            return {"status": "rejected", "reason": "El estado previo no es RAW o no existe el registro"}
+            return {
+                "status": "rejected",
+                "reason": "El estado previo no es RAW o no existe el registro",
+                "file_key": file_key_db
+            }
 
         # 2. Transición y búsqueda de script
         update_load_status(conn, file_key_db, 'VERIFICANDO SI POSEE ALGORITMO')
