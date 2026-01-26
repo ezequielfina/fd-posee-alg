@@ -1,13 +1,21 @@
 import os
+import sys
 import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelName) - [%(funcName)s] - %(message)s',
+    stream=sys.stdout
+)
+
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 def get_db_connection():
+    logger.info('Obteniendo conexión a DB.')
+
     return psycopg2.connect(
         host=os.environ['DB_HOST'],
         database=os.environ['DB_NAME'],
@@ -20,6 +28,8 @@ def get_db_connection():
 
 def update_load_status(conn, file_key, status):
     """Actualiza el estado. No capturamos error aquí para que explote en el main si falla."""
+    logger.info(f"Actualizando estado a {status}")
+
     with conn.cursor() as cur:
         query = "UPDATE cargas SET status = %s WHERE nombre_archivo = %s"
         cur.execute(query, (status, file_key))
@@ -28,26 +38,34 @@ def update_load_status(conn, file_key, status):
 
 
 def read_current_status(conn, file_key) -> bool:
+    logger.info("Leyendo estado previo.")
+
     with conn.cursor() as cur:
         query = "SELECT status FROM cargas WHERE nombre_archivo = %s"
         cur.execute(query, (file_key,))
         registro = cur.fetchone()
-        print(f"registro {registro}")
+
+        logger.info(f"registro {registro}")
+
         return registro and registro['status'] == 'RAW'
 
 
 def get_id_carga(conn, file_key: str) -> str:
+    logger.info("Obteniendo id_carga.")
+
     with conn.cursor() as cur:
         query = "SELECT id FROM cargas WHERE nombre_archivo = %s"
         cur.execute(query, (file_key, ))
 
         id_carga = cur.fetchone()
-        print(f"id_carga {id_carga['id']}")
 
+        logger.info(f"id_carga {id_carga['id']}")
         return id_carga['id']
 
 
 def get_arn_script(conn, file_key):
+    logger.info("Intentando obtener scripts de validación y transformación.")
+
     with conn.cursor() as cur:
         # 1. Usamos SELECT * para que traiga columnas separadas: v_script y t_script
         query = "SELECT * FROM obtener_script_carga(%s)"
@@ -104,10 +122,14 @@ def get_arn_script(conn, file_key):
 # --- HANDLER PRINCIPAL (Único lugar con Try/Except complejo) ---
 
 def lambda_handler(event, context):
+    logger.info("INICIO del lambda function.")
+
     # Accedemos directo al bloque 'detail'
     full_path = event['detail']['object']['key']
     file_key_db = full_path.replace('raw/', '', 1)
-    print(f"file_key {file_key_db}")
+
+    logger.info(f"file_key {file_key_db}")
+
     conn = None
 
     try:
@@ -127,15 +149,9 @@ def lambda_handler(event, context):
 
     except Exception as e:
         error_msg = f"Fallo crítico: {str(e)}"
-        logger.error(error_msg)
-        if conn:
-            try:
-                # Intentamos marcar el error en la DB
-                update_load_status(conn, file_key_db, 'FAILED')
-            except Exception:  # <-- Cambiado de bare except a Exception
-                # Si llegamos aquí es porque la conexión a la DB se rompió físicamente
-                logger.warning("No se pudo actualizar el estado a FAILED porque la DB no responde.")
-        return {"status": "error", "message": error_msg}
+        logger.error(f"Error en la conexión con la DB: {error_msg}")
+
+        return {"status": "error", "message": "Error en la conexión con la DB"}
     finally:
         if conn:
             conn.close()
