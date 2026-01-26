@@ -42,9 +42,9 @@ def get_id_carga(conn, file_key: str) -> str:
         cur.execute(query, (file_key, ))
 
         id_carga = cur.fetchone()
-        print(f'id_carga {id_carga}')
+        print(f'id_carga {id_carga['id']}')
 
-        return id_carga
+        return id_carga['id']
 
 
 def get_arn_script(conn, file_key):
