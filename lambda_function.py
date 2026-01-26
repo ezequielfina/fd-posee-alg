@@ -34,7 +34,6 @@ def update_load_status(conn, file_key, status):
         query = "UPDATE cargas SET status = %s WHERE nombre_archivo = %s"
         cur.execute(query, (status, file_key))
         conn.commit()
-        logger.info(f"Estado de {file_key} actualizado a {status}")
 
 
 def read_current_status(conn, file_key) -> bool:
@@ -45,7 +44,7 @@ def read_current_status(conn, file_key) -> bool:
         cur.execute(query, (file_key,))
         registro = cur.fetchone()
 
-        logger.info(f"registro {registro}")
+        logger.info(f"registro: {registro['status']}")
 
         return registro and registro['status'] == 'RAW'
 
