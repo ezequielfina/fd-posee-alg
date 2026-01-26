@@ -6,8 +6,9 @@ from psycopg2.extras import RealDictCursor
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelName) - [%(funcName)s] - %(message)s',
-    stream=sys.stdout
+    format='%(asctime)s - %(levelname) - [%(funcName)s] - %(message)s',
+    stream=sys.stdout,
+    force=True
 )
 
 logger = logging.getLogger()
