@@ -2,11 +2,12 @@ import os
 import sys
 import logging
 import psycopg2
+from typing import Optional
 from psycopg2.extras import RealDictCursor
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname) - [%(funcName)s] - %(message)s',
+    format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s',
     stream=sys.stdout,
     force=True
 )
@@ -45,12 +46,15 @@ def read_current_status(conn, file_key) -> bool:
         cur.execute(query, (file_key,))
         registro = cur.fetchone()
 
-        logger.info(f"registro: {registro['status']}")
+        if registro:
+            logger.info(f"registro: {registro['status']}")
+            return registro and registro['status'] == 'RAW'
 
-        return registro and registro['status'] == 'RAW'
+        logger.warning(f"No se encontró registro para el archivo: {file_key}")
+        return False
 
 
-def get_id_carga(conn, file_key: str) -> str:
+def get_id_carga(conn, file_key: str) -> str | bool:
     logger.info("Obteniendo id_carga.")
 
     with conn.cursor() as cur:
@@ -59,8 +63,12 @@ def get_id_carga(conn, file_key: str) -> str:
 
         id_carga = cur.fetchone()
 
-        logger.info(f"id_carga {id_carga['id']}")
-        return id_carga['id']
+        if id_carga:
+            logger.info(f"id_carga: {id_carga['id']}")
+            return id_carga['id']
+
+        logger.warning(f"No se encontró id_carga para el archivo: {file_key}")
+        return False
 
 
 def get_arn_script(conn, file_key):
@@ -128,7 +136,7 @@ def lambda_handler(event, context):
     full_path = event['detail']['object']['key']
     file_key_db = full_path.replace('raw/', '', 1)
 
-    logger.info(f"file_key {file_key_db}")
+    logger.info(f"file_key: {file_key_db}")
 
     conn = None
 
