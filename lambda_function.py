@@ -42,7 +42,7 @@ def get_id_carga(conn, file_key: str) -> str:
         cur.execute(query, (file_key, ))
 
         id_carga = cur.fetchone()
-        print(f'id_carga {id_carga['id']}')
+        print(f"id_carga {id_carga['id']}")
 
         return id_carga['id']
 
